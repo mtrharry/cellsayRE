@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -109,8 +110,9 @@ class _CameraTestScreenState extends State<CameraTestScreen>
 
       final newController = CameraController(
         selectedCamera,
-        ResolutionPreset.high,
+        ResolutionPreset.medium,
         enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.yuv420, // <--- forzamos YUV420
       );
 
       await newController.initialize();
@@ -387,34 +389,37 @@ class _CameraTestScreenState extends State<CameraTestScreen>
     }
   }
 
-  InputImage? _buildInputImage(
-      CameraImage image, InputImageRotation rotation) {
-    if (image.planes.isEmpty) {
-      return null;
-    }
-
+  InputImage? _buildInputImage(CameraImage image, InputImageRotation rotation) {
     final WriteBuffer allBytes = WriteBuffer();
     for (final Plane plane in image.planes) {
       allBytes.putUint8List(plane.bytes);
     }
     final bytes = allBytes.done().buffer.asUint8List();
 
-    final Size imageSize = Size(
+    final Size size = Size(
       image.width.toDouble(),
       image.height.toDouble(),
     );
 
-    final format = InputImageFormatValue.fromRawValue(image.format.raw) ??
-        InputImageFormat.nv21;
-    final metadata = InputImageMetadata(
-      size: imageSize,
-      rotation: rotation,
-      format: format,
-      bytesPerRow: image.planes.first.bytesPerRow,
-    );
+    final format = (image.planes.length == 1)
+        ? InputImageFormat.nv21
+        : InputImageFormat.yuv420;
 
-    return InputImage.fromBytes(bytes: bytes, metadata: metadata);
+    return InputImage.fromBytes(
+      bytes: bytes,
+      metadata: InputImageMetadata(
+        size: size,
+        rotation: rotation,
+        format: format,
+        bytesPerRow: image.planes.first.bytesPerRow,
+      ),
+    );
   }
+
+
+
+
+
 
   String _normalizeRecognizedText(String text) {
     final normalizedLines = text
