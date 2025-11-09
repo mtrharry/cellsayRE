@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'screens/camera_test_screen.dart';
+
 void main() {
   runApp(const MyApp());
 }
@@ -51,10 +53,17 @@ class HomeMenuScreen extends StatelessWidget {
         hint: 'Toca dos veces para identificar billetes y monedas.',
         icon: Icons.attach_money,
       ),
-      const _FeatureButtonData(
+      _FeatureButtonData(
         label: 'Probar cámara',
         hint: 'Toca dos veces para revisar el funcionamiento de la cámara.',
         icon: Icons.photo_camera,
+        action: (context) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const CameraTestScreen(),
+            ),
+          );
+        },
       ),
     ];
 
@@ -104,8 +113,14 @@ class HomeMenuScreen extends StatelessWidget {
                               .titleMedium
                               ?.copyWith(fontSize: 20),
                         ),
-                        onPressed: () =>
-                            _showComingSoon(context, data.label),
+                        onPressed: () {
+                          final action = data.action;
+                          if (action != null) {
+                            action(context);
+                          } else {
+                            _showComingSoon(context, data.label);
+                          }
+                        },
                         icon: Icon(data.icon, size: 32),
                         label: Text(data.label),
                       ),
@@ -126,9 +141,11 @@ class _FeatureButtonData {
     required this.label,
     required this.hint,
     required this.icon,
+    this.action,
   });
 
   final String label;
   final String hint;
   final IconData icon;
+  final void Function(BuildContext context)? action;
 }
