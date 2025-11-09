@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 
@@ -390,20 +391,26 @@ class _CameraTestScreenState extends State<CameraTestScreen>
   }
 
   InputImage? _buildInputImage(CameraImage image, InputImageRotation rotation) {
-    final WriteBuffer allBytes = WriteBuffer();
-    for (final Plane plane in image.planes) {
-      allBytes.putUint8List(plane.bytes);
-    }
-    final bytes = allBytes.done().buffer.asUint8List();
-
     final Size size = Size(
       image.width.toDouble(),
       image.height.toDouble(),
     );
 
-    final format = (image.planes.length == 1)
-        ? InputImageFormat.nv21
-        : InputImageFormat.yuv420;
+    Uint8List? bytes;
+    InputImageFormat? format;
+
+    if (image.planes.length == 1) {
+      bytes = image.planes.first.bytes;
+      format = InputImageFormat.nv21;
+    } else if (image.format.group == ImageFormatGroup.yuv420 &&
+        image.planes.length == 3) {
+      bytes = _convertYuv420ToNv21(image);
+      format = InputImageFormat.nv21;
+    }
+
+    if (bytes == null || format == null) {
+      return null;
+    }
 
     final planeData = image.planes
         .map(
@@ -425,6 +432,51 @@ class _CameraTestScreenState extends State<CameraTestScreen>
         planeData: planeData,
       ),
     );
+  }
+
+  Uint8List _convertYuv420ToNv21(CameraImage image) {
+    final int width = image.width;
+    final int height = image.height;
+    final int uvWidth = width ~/ 2;
+    final int uvHeight = height ~/ 2;
+
+    final Plane yPlane = image.planes[0];
+    final Plane uPlane = image.planes[1];
+    final Plane vPlane = image.planes[2];
+
+    final Uint8List nv21Bytes = Uint8List(width * height + (width * height) ~/ 2);
+
+    // Copy Y plane taking the row stride into account.
+    int outputOffset = 0;
+    for (int row = 0; row < height; row++) {
+      final int rowStart = row * yPlane.bytesPerRow;
+      nv21Bytes.setRange(
+        outputOffset,
+        outputOffset + width,
+        yPlane.bytes,
+        rowStart,
+      );
+      outputOffset += width;
+    }
+
+    final int uRowStride = uPlane.bytesPerRow;
+    final int vRowStride = vPlane.bytesPerRow;
+    final int uPixelStride = uPlane.bytesPerPixel ?? 1;
+    final int vPixelStride = vPlane.bytesPerPixel ?? 1;
+
+    int uvOutputOffset = width * height;
+    for (int row = 0; row < uvHeight; row++) {
+      final int uRowStart = row * uRowStride;
+      final int vRowStart = row * vRowStride;
+      for (int col = 0; col < uvWidth; col++) {
+        final int uIndex = uRowStart + col * uPixelStride;
+        final int vIndex = vRowStart + col * vPixelStride;
+        nv21Bytes[uvOutputOffset++] = vPlane.bytes[vIndex];
+        nv21Bytes[uvOutputOffset++] = uPlane.bytes[uIndex];
+      }
+    }
+
+    return nv21Bytes;
   }
 
 
