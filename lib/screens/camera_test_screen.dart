@@ -398,29 +398,34 @@ class _CameraTestScreenState extends State<CameraTestScreen>
 
     Uint8List? bytes;
     InputImageFormat? format;
+    int? bytesPerRow;
 
     if (image.planes.length == 1) {
-      bytes = image.planes.first.bytes;
-      format = InputImageFormat.nv21;
+      final plane = image.planes.first;
+      bytes = plane.bytes;
+      bytesPerRow = plane.bytesPerRow;
+
+      switch (image.format.group) {
+        case ImageFormatGroup.bgra8888:
+          format = InputImageFormat.bgra8888;
+          break;
+        case ImageFormatGroup.yuv420:
+        case ImageFormatGroup.nv21:
+          format = InputImageFormat.nv21;
+          break;
+        default:
+          break;
+      }
     } else if (image.format.group == ImageFormatGroup.yuv420 &&
         image.planes.length == 3) {
       bytes = _convertYuv420ToNv21(image);
       format = InputImageFormat.nv21;
+      bytesPerRow = image.width;
     }
 
-    if (bytes == null || format == null) {
+    if (bytes == null || format == null || bytesPerRow == null) {
       return null;
     }
-
-    final planeData = image.planes
-        .map(
-          (plane) => InputImagePlaneMetadata(
-            bytesPerRow: plane.bytesPerRow,
-            height: plane.height,
-            width: plane.width,
-          ),
-        )
-        .toList();
 
     return InputImage.fromBytes(
       bytes: bytes,
@@ -428,8 +433,7 @@ class _CameraTestScreenState extends State<CameraTestScreen>
         size: size,
         rotation: rotation,
         format: format,
-        bytesPerRow: image.planes.first.bytesPerRow,
-        planeData: planeData,
+        bytesPerRow: bytesPerRow,
       ),
     );
   }
