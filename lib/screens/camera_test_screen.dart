@@ -406,21 +406,11 @@ class _CameraTestScreenState extends State<CameraTestScreen>
 
     final format = InputImageFormatValue.fromRawValue(image.format.raw) ??
         InputImageFormat.nv21;
-    final planeData = image.planes
-        .map(
-          (Plane plane) => InputImagePlaneMetadata(
-            bytesPerRow: plane.bytesPerRow,
-            height: plane.height,
-            width: plane.width,
-          ),
-        )
-        .toList();
-
     final metadata = InputImageMetadata(
       size: imageSize,
       rotation: rotation,
       format: format,
-      planeData: planeData,
+      bytesPerRow: image.planes.first.bytesPerRow,
     );
 
     return InputImage.fromBytes(bytes: bytes, metadata: metadata);
