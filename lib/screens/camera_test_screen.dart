@@ -405,6 +405,16 @@ class _CameraTestScreenState extends State<CameraTestScreen>
         ? InputImageFormat.nv21
         : InputImageFormat.yuv420;
 
+    final planeData = image.planes
+        .map(
+          (plane) => InputImagePlaneMetadata(
+            bytesPerRow: plane.bytesPerRow,
+            height: plane.height,
+            width: plane.width,
+          ),
+        )
+        .toList();
+
     return InputImage.fromBytes(
       bytes: bytes,
       metadata: InputImageMetadata(
@@ -412,6 +422,7 @@ class _CameraTestScreenState extends State<CameraTestScreen>
         rotation: rotation,
         format: format,
         bytesPerRow: image.planes.first.bytesPerRow,
+        planeData: planeData,
       ),
     );
   }
@@ -1024,71 +1035,102 @@ class _CameraInfoPanel extends StatelessWidget {
       color: Colors.white.withOpacity(0.92),
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Vista previa en vivo',
-              style: textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF0B2545),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Utiliza este modo para comprobar rápidamente si la cámara de tu dispositivo funciona correctamente.',
-              style: textTheme.bodyMedium?.copyWith(color: const Color(0xFF1B4965)),
-            ),
-            const SizedBox(height: 16),
-            const _BulletPoint(
-              icon: Icons.brightness_6,
-              text:
-                  'Si la imagen se ve oscura, mueve el dispositivo hacia un lugar mejor iluminado.',
-            ),
-            const SizedBox(height: 12),
-            const _BulletPoint(
-              icon: Icons.center_focus_strong,
-              text: 'Acerca o aleja el dispositivo hasta que el objeto se vea nítido.',
-            ),
-            const SizedBox(height: 12),
-            const _BulletPoint(
-              icon: Icons.volume_up,
-              text:
-                  'Activa TalkBack o VoiceOver para recibir ayuda auditiva al explorar la pantalla.',
-            ),
-            const Spacer(),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                if (canSwitchCamera)
-                  FilledButton.icon(
-                    onPressed: isInitializing ? null : onSwitchCamera,
-                    icon: const Icon(Icons.cameraswitch),
-                    label: const Text('Cambiar cámara'),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final minHeight = constraints.maxHeight.isFinite
+                ? constraints.maxHeight
+                : 0.0;
+            final minWidth = constraints.maxWidth.isFinite
+                ? constraints.maxWidth
+                : 0.0;
+            return SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: minHeight,
+                  minWidth: minWidth,
+                ),
+                child: IntrinsicHeight(
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Vista previa en vivo',
+                          style: textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF0B2545),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Utiliza este modo para comprobar rápidamente si la cámara de tu dispositivo funciona correctamente.',
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: const Color(0xFF1B4965),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const _BulletPoint(
+                          icon: Icons.brightness_6,
+                          text:
+                              'Si la imagen se ve oscura, mueve el dispositivo hacia un lugar mejor iluminado.',
+                        ),
+                        const SizedBox(height: 12),
+                        const _BulletPoint(
+                          icon: Icons.center_focus_strong,
+                          text:
+                              'Acerca o aleja el dispositivo hasta que el objeto se vea nítido.',
+                        ),
+                        const SizedBox(height: 12),
+                        const _BulletPoint(
+                          icon: Icons.volume_up,
+                          text:
+                              'Activa TalkBack o VoiceOver para recibir ayuda auditiva al explorar la pantalla.',
+                        ),
+                        const Spacer(),
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: [
+                            if (canSwitchCamera)
+                              FilledButton.icon(
+                                onPressed: isInitializing ? null : onSwitchCamera,
+                                icon: const Icon(Icons.cameraswitch),
+                                label: const Text('Cambiar cámara'),
+                              ),
+                            FilledButton.icon(
+                              onPressed: isInitializing
+                                  ? null
+                                  : () => onRetry(
+                                        cameraIndex: null,
+                                        reuseExistingList: false,
+                                      ),
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Reiniciar vista previa'),
+                            ),
+                            FilledButton.icon(
+                              onPressed: () => Navigator.of(context).maybePop(),
+                              icon: const Icon(Icons.arrow_back),
+                              label: const Text('Volver'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          hasMultipleCameras
+                              ? 'Consejo: alterna entre las cámaras disponibles para elegir la que ofrezca mejor ángulo.'
+                              : 'Este dispositivo reporta una única cámara disponible.',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF0F4C75),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                FilledButton.icon(
-                  onPressed: isInitializing
-                      ? null
-                      : () => onRetry(cameraIndex: null, reuseExistingList: false),
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Reiniciar vista previa'),
                 ),
-                FilledButton.icon(
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  icon: const Icon(Icons.arrow_back),
-                  label: const Text('Volver'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              hasMultipleCameras
-                  ? 'Consejo: alterna entre las cámaras disponibles para elegir la que ofrezca mejor ángulo.'
-                  : 'Este dispositivo reporta una única cámara disponible.',
-              style: textTheme.bodySmall?.copyWith(color: const Color(0xFF0F4C75)),
-            ),
-          ],
+              );
+            },
+          ),
         ),
       ),
     );
