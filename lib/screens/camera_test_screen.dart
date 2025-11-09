@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 
@@ -390,20 +391,41 @@ class _CameraTestScreenState extends State<CameraTestScreen>
   }
 
   InputImage? _buildInputImage(CameraImage image, InputImageRotation rotation) {
-    final WriteBuffer allBytes = WriteBuffer();
-    for (final Plane plane in image.planes) {
-      allBytes.putUint8List(plane.bytes);
-    }
-    final bytes = allBytes.done().buffer.asUint8List();
-
     final Size size = Size(
       image.width.toDouble(),
       image.height.toDouble(),
     );
 
-    final format = (image.planes.length == 1)
-        ? InputImageFormat.nv21
-        : InputImageFormat.yuv420;
+    Uint8List? bytes;
+    InputImageFormat? format;
+    int? bytesPerRow;
+
+    if (image.planes.length == 1) {
+      final plane = image.planes.first;
+      bytes = plane.bytes;
+      bytesPerRow = plane.bytesPerRow;
+
+      switch (image.format.group) {
+        case ImageFormatGroup.bgra8888:
+          format = InputImageFormat.bgra8888;
+          break;
+        case ImageFormatGroup.yuv420:
+        case ImageFormatGroup.nv21:
+          format = InputImageFormat.nv21;
+          break;
+        default:
+          break;
+      }
+    } else if (image.format.group == ImageFormatGroup.yuv420 &&
+        image.planes.length == 3) {
+      bytes = _convertYuv420ToNv21(image);
+      format = InputImageFormat.nv21;
+      bytesPerRow = image.width;
+    }
+
+    if (bytes == null || format == null || bytesPerRow == null) {
+      return null;
+    }
 
     return InputImage.fromBytes(
       bytes: bytes,
@@ -411,9 +433,54 @@ class _CameraTestScreenState extends State<CameraTestScreen>
         size: size,
         rotation: rotation,
         format: format,
-        bytesPerRow: image.planes.first.bytesPerRow,
+        bytesPerRow: bytesPerRow,
       ),
     );
+  }
+
+  Uint8List _convertYuv420ToNv21(CameraImage image) {
+    final int width = image.width;
+    final int height = image.height;
+    final int uvWidth = width ~/ 2;
+    final int uvHeight = height ~/ 2;
+
+    final Plane yPlane = image.planes[0];
+    final Plane uPlane = image.planes[1];
+    final Plane vPlane = image.planes[2];
+
+    final Uint8List nv21Bytes = Uint8List(width * height + (width * height) ~/ 2);
+
+    // Copy Y plane taking the row stride into account.
+    int outputOffset = 0;
+    for (int row = 0; row < height; row++) {
+      final int rowStart = row * yPlane.bytesPerRow;
+      nv21Bytes.setRange(
+        outputOffset,
+        outputOffset + width,
+        yPlane.bytes,
+        rowStart,
+      );
+      outputOffset += width;
+    }
+
+    final int uRowStride = uPlane.bytesPerRow;
+    final int vRowStride = vPlane.bytesPerRow;
+    final int uPixelStride = uPlane.bytesPerPixel ?? 1;
+    final int vPixelStride = vPlane.bytesPerPixel ?? 1;
+
+    int uvOutputOffset = width * height;
+    for (int row = 0; row < uvHeight; row++) {
+      final int uRowStart = row * uRowStride;
+      final int vRowStart = row * vRowStride;
+      for (int col = 0; col < uvWidth; col++) {
+        final int uIndex = uRowStart + col * uPixelStride;
+        final int vIndex = vRowStart + col * vPixelStride;
+        nv21Bytes[uvOutputOffset++] = vPlane.bytes[vIndex];
+        nv21Bytes[uvOutputOffset++] = uPlane.bytes[uIndex];
+      }
+    }
+
+    return nv21Bytes;
   }
 
 
@@ -1024,71 +1091,102 @@ class _CameraInfoPanel extends StatelessWidget {
       color: Colors.white.withOpacity(0.92),
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Vista previa en vivo',
-              style: textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF0B2545),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Utiliza este modo para comprobar rápidamente si la cámara de tu dispositivo funciona correctamente.',
-              style: textTheme.bodyMedium?.copyWith(color: const Color(0xFF1B4965)),
-            ),
-            const SizedBox(height: 16),
-            const _BulletPoint(
-              icon: Icons.brightness_6,
-              text:
-                  'Si la imagen se ve oscura, mueve el dispositivo hacia un lugar mejor iluminado.',
-            ),
-            const SizedBox(height: 12),
-            const _BulletPoint(
-              icon: Icons.center_focus_strong,
-              text: 'Acerca o aleja el dispositivo hasta que el objeto se vea nítido.',
-            ),
-            const SizedBox(height: 12),
-            const _BulletPoint(
-              icon: Icons.volume_up,
-              text:
-                  'Activa TalkBack o VoiceOver para recibir ayuda auditiva al explorar la pantalla.',
-            ),
-            const Spacer(),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                if (canSwitchCamera)
-                  FilledButton.icon(
-                    onPressed: isInitializing ? null : onSwitchCamera,
-                    icon: const Icon(Icons.cameraswitch),
-                    label: const Text('Cambiar cámara'),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final minHeight = constraints.maxHeight.isFinite
+                ? constraints.maxHeight
+                : 0.0;
+            final minWidth = constraints.maxWidth.isFinite
+                ? constraints.maxWidth
+                : 0.0;
+            return SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: minHeight,
+                  minWidth: minWidth,
+                ),
+                child: IntrinsicHeight(
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Vista previa en vivo',
+                          style: textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF0B2545),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Utiliza este modo para comprobar rápidamente si la cámara de tu dispositivo funciona correctamente.',
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: const Color(0xFF1B4965),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const _BulletPoint(
+                          icon: Icons.brightness_6,
+                          text:
+                              'Si la imagen se ve oscura, mueve el dispositivo hacia un lugar mejor iluminado.',
+                        ),
+                        const SizedBox(height: 12),
+                        const _BulletPoint(
+                          icon: Icons.center_focus_strong,
+                          text:
+                              'Acerca o aleja el dispositivo hasta que el objeto se vea nítido.',
+                        ),
+                        const SizedBox(height: 12),
+                        const _BulletPoint(
+                          icon: Icons.volume_up,
+                          text:
+                              'Activa TalkBack o VoiceOver para recibir ayuda auditiva al explorar la pantalla.',
+                        ),
+                        const Spacer(),
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: [
+                            if (canSwitchCamera)
+                              FilledButton.icon(
+                                onPressed: isInitializing ? null : onSwitchCamera,
+                                icon: const Icon(Icons.cameraswitch),
+                                label: const Text('Cambiar cámara'),
+                              ),
+                            FilledButton.icon(
+                              onPressed: isInitializing
+                                  ? null
+                                  : () => onRetry(
+                                        cameraIndex: null,
+                                        reuseExistingList: false,
+                                      ),
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Reiniciar vista previa'),
+                            ),
+                            FilledButton.icon(
+                              onPressed: () => Navigator.of(context).maybePop(),
+                              icon: const Icon(Icons.arrow_back),
+                              label: const Text('Volver'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          hasMultipleCameras
+                              ? 'Consejo: alterna entre las cámaras disponibles para elegir la que ofrezca mejor ángulo.'
+                              : 'Este dispositivo reporta una única cámara disponible.',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF0F4C75),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                FilledButton.icon(
-                  onPressed: isInitializing
-                      ? null
-                      : () => onRetry(cameraIndex: null, reuseExistingList: false),
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Reiniciar vista previa'),
                 ),
-                FilledButton.icon(
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  icon: const Icon(Icons.arrow_back),
-                  label: const Text('Volver'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              hasMultipleCameras
-                  ? 'Consejo: alterna entre las cámaras disponibles para elegir la que ofrezca mejor ángulo.'
-                  : 'Este dispositivo reporta una única cámara disponible.',
-              style: textTheme.bodySmall?.copyWith(color: const Color(0xFF0F4C75)),
-            ),
-          ],
+              );
+            },
+          ),
         ),
       ),
     );
